@@ -1,68 +1,52 @@
-# App Starter Project with Webpack
+# ChronoGrid Nexus - Dicoding Story App
 
-Proyek ini adalah setup dasar untuk aplikasi web yang menggunakan webpack untuk proses bundling, Babel untuk transpile JavaScript, serta mendukung proses build dan serving aplikasi.
+ChronoGrid Nexus (Dicoding Story App) adalah aplikasi web berbagi cerita terdesentralisasi dengan fitur pemetaan geografis interaktif yang dibuat untuk memenuhi standar kompetensi submission akhir kelas "Menjadi Front-End Web Developer Expert" di Dicoding.
 
-## Table of Contents
+Aplikasi ini didesain sebagai *Progressive Web App* (PWA) lengkap dengan dukungan *offline capabilities*, IndexedDB, *background sync*, dan *push notification*.
 
-- [Getting Started](#getting-started)
-- [Scripts](#scripts)
-- [Project Structure](#project-structure)
+## Fitur Utama & Kriteria yang Terpenuhi
 
-## Getting Started
+1. **SPA & Transisi Halaman (Kriteria Dasar Terpenuhi)**
+   Aplikasi menggunakan pola *Single Page Application* dengan DOM manipulation murni. Dilengkapi dengan animasi transisi native `document.startViewTransition`.
+   
+2. **Push Notification (Advanced)**
+   - Mendukung integrasi dengan Push Notification server VAPID dari API Dicoding.
+   - Pendaftaran notifikasi fleksibel dengan toggle interaktif (Subscribe / Unsubscribe) yang langsung memodifikasi tombol antarmuka di _header_.
+   - Notifikasi dinamis: Klik pada _Push Notification_ untuk cerita baru akan membawa pengguna masuk/mengarah (navigasi otomatis) ke detail cerita bersangkutan melalui _service worker_.
+   
+3. **PWA, Instalasi & Dukungan Offline (Advanced)**
+   - Muncul prompt _installable_ / "Add to Home Screen".
+   - `manifest.json` solid: Meliputi maskable icons, *screenshots* responsif (mobile dan desktop), dan App Shortcuts untuk "Add New Story". Tidak terdapat warning saat diperiksa lewat Lighthouse/Application tab Chrome.
+   - *Network-First API Caching & Cache-First Assets*: Memastikan antarmuka tidak rusak saat kehilangan internet, serta sanggup memunculkan daftar (feed) cerita secara offline menggunakan *cache* otomatis.
+   
+4. **Penerapan IndexedDB (Advanced)**
+   - Aplikasi menggunakan IndexedDB untuk menyimpan daftar *Archives* / Favorit secara luring. 
+   - Halaman Favorit mendukung interaksi: bisa melakukan *Searching* teks dan *Sorting* berdasarkan nama atau waktu.
+   - Mendukung **Background Sync**: Saat internet putus, operasi pembuatan *Story* dialihkan untuk disimpan pada antrean IndexedDB (`queued-transmissions`). Saat internet hidup kembali (`online` event atau sinkronisasi _service worker_), data di *queue* akan secara otomatis dipos ke server API, dan _toast/alert_ kesuksesan akan muncul.
 
-### Prerequisites
+5. **Deploy Publik**
+   Otomatis ter-deploy di [GitHub Pages](https://FIRMAN1975.github.io/dicoding) melalui serangkaian GitHub Actions Pipeline.
 
-- [Node.js](https://nodejs.org/) (disarankan versi 12 atau lebih tinggi)
-- [npm](https://www.npmjs.com/) (Node package manager)
+## Stack & Teknologi
 
-### Installation
+- **Core**: Vanilla JavaScript (ES6+), HTML5, CSS3.
+- **Bundler**: Webpack 5 + Babel.
+- **Peta Interaktif**: Leaflet.js
+- **Database Lokal**: IndexedDB (Native `window.indexedDB`).
+- **Service Worker**: Native API Service Worker, Push API, Sync API.
 
-1. Download starter project [di sini](https://raw.githubusercontent.com/dicodingacademy/a219-web-intermediate-labs/099-shared-files/starter-project-with-webpack.zip).
-2. Lakukan unzip file.
-3. Pasang seluruh dependencies dengan perintah berikut.
-   ```shell
-   npm install
-   ```
+## Skrip Pengembangan
 
-## Scripts
+Jalankan perintah ini di terminal setelah mengunduh repo dan mengetikkan `npm install`:
 
 - Build for Production:
   ```shell
   npm run build
   ```
-  Script ini menjalankan webpack dalam mode production menggunakan konfigurasi `webpack.prod.js` dan menghasilkan sejumlah file build ke direktori `dist`.
-
 - Start Development Server:
   ```shell
   npm run start-dev
   ```
-  Script ini menjalankan server pengembangan webpack dengan fitur live reload dan mode development sesuai konfigurasi di`webpack.dev.js`.
 
-- Serve:
-  ```shell
-  npm run serve
-  ```
-  Script ini menggunakan [`http-server`](https://www.npmjs.com/package/http-server) untuk menyajikan konten dari direktori `dist`.
-
-## Project Structure
-
-Proyek starter ini dirancang agar kode tetap modular dan terorganisir.
-
-```text
-starter-project/
-├── dist/                   # Compiled files for production
-├── src/                    # Source project files
-│   ├── public/             # Public files
-│   ├── scripts/            # Source JavaScript files
-│   │   └── index.js        # Main JavaScript entry file
-│   ├── styles/             # Source CSS files
-│   │   └── styles.css      # Main CSS file
-│   └── index.html/         # Main HTML file
-├── package.json            # Project metadata and dependencies
-├── package-lock.json       # Project metadata and dependencies
-├── README.md               # Project documentation
-├── STUDENT.txt             # Student information
-├── webpack.common.js       # Webpack common configuration
-├── webpack.dev.js          # Webpack development configuration
-└── webpack.prod.js         # Webpack production configuration
-```
+---
+*Dikembangkan oleh [FIRMAN1975](https://github.com/FIRMAN1975) untuk submission Dicoding Academy.*
