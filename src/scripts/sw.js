@@ -1,8 +1,12 @@
-const CORE_CACHE_TAG = 'chronogrid-core-v4';
-const API_CACHE_TAG = 'chronogrid-api-v4';
-const MEDIA_CACHE_TAG = 'chronogrid-media-v4';
+const CACHE_PREFIX = 'chronogrid-nexus';
+const CACHE_VERSION = 'v5';
+const CACHES = {
+  PRECACHE: `${CACHE_PREFIX}-precache-${CACHE_VERSION}`,
+  RUNTIME: `${CACHE_PREFIX}-runtime-${CACHE_VERSION}`,
+  API: `${CACHE_PREFIX}-api-${CACHE_VERSION}`
+};
 
-const ASSET_MANIFEST = [
+const PRECACHE_URLS = [
   './',
   './index.html',
   './app.bundle.js',
@@ -15,169 +19,133 @@ const ASSET_MANIFEST = [
   './screenshots/screenshot-desktop.png',
   './screenshots/screenshot-mobile.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
 
-self.addEventListener('install', (installEvent) => {
-  self.skipWaiting();
-  installEvent.waitUntil(
-    caches.open(CORE_CACHE_TAG).then((cacheStorage) => {
-      return cacheStorage.addAll(ASSET_MANIFEST).catch((cacheErr) => {
-        console.warn('Non-critical asset caching skipped during install:', cacheErr);
-      });
-    })
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHES.PRECACHE)
+      .then(cache => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+      .catch(err => console.log('Precache error:', err))
   );
 });
 
-self.addEventListener('activate', (activationEvent) => {
-  activationEvent.waitUntil(
-    caches.keys().then((cacheKeys) => {
+self.addEventListener('activate', event => {
+  const currentCaches = Object.values(CACHES);
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheKeys
-          .filter((key) => key !== CORE_CACHE_TAG && key !== API_CACHE_TAG && key !== MEDIA_CACHE_TAG)
-          .map((key) => caches.delete(key))
+        cacheNames.map(cacheName => {
+          if (!currentCaches.includes(cacheName) && cacheName.startsWith(CACHE_PREFIX)) {
+            return caches.delete(cacheName);
+          }
+        })
       );
     }).then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', (fetchEvent) => {
-  const reqObject = fetchEvent.request;
-  const parsedTargetUrl = new URL(reqObject.url);
+const handleApiRequest = async (request) => {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHES.API);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cachedResponse = await caches.match(request);
+    if (cachedResponse) return cachedResponse;
 
-  if (parsedTargetUrl.protocol !== 'http:' && parsedTargetUrl.protocol !== 'https:') {
-    return;
+    return new Response(JSON.stringify({
+      error: true,
+      message: 'Network offline. Loading fallback data.',
+      listStory: []
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
+};
 
-  // API Caching Strategy (Network First -> Cache Fallback)
-  if (parsedTargetUrl.origin === 'https://story-api.dicoding.dev') {
-    fetchEvent.respondWith(
-      fetch(reqObject)
-        .then((serverResponse) => {
-          if (serverResponse.status === 200 && reqObject.method === 'GET') {
-            const clonedResponse = serverResponse.clone();
-            caches.open(API_CACHE_TAG).then((apiCache) => apiCache.put(reqObject, clonedResponse));
-          }
-          return serverResponse;
-        })
-        .catch(() => {
-          return caches.match(reqObject).then((matchedCache) => {
-            if (matchedCache) return matchedCache;
-            return new Response(
-              JSON.stringify({
-                error: false,
-                message: 'Offline fallback mode active',
-                listStory: [],
-              }),
-              { headers: { 'Content-Type': 'application/json' } }
-            );
-          });
-        })
-    );
-    return;
+const handleResourceRequest = async (request) => {
+  const cachedResponse = await caches.match(request);
+  if (cachedResponse) return cachedResponse;
+
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse.ok && request.method === 'GET') {
+      const cache = await caches.open(CACHES.RUNTIME);
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    // Return a basic fallback if necessary, or let it fail
+    return new Response('Network error occurred', { status: 408, headers: { 'Content-Type': 'text/plain' } });
   }
+};
 
-  // Media & Map Tiles Strategy (Cache First -> Network Fallback)
-  if (
-    reqObject.destination === 'image' ||
-    parsedTargetUrl.hostname.includes('tile.openstreetmap.org') ||
-    parsedTargetUrl.hostname.includes('tile.opentopomap.org') ||
-    parsedTargetUrl.hostname.includes('story-api.dicoding.dev')
-  ) {
-    fetchEvent.respondWith(
-      caches.match(reqObject).then((cachedItem) => {
-        if (cachedItem) return cachedItem;
-        return fetch(reqObject).then((netResponse) => {
-          if (netResponse.status === 200) {
-            const cloneNet = netResponse.clone();
-            caches.open(MEDIA_CACHE_TAG).then((mediaCache) => mediaCache.put(reqObject, cloneNet));
-          }
-          return netResponse;
-        }).catch(() => caches.match('./favicon.png'));
-      })
-    );
-    return;
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  if (event.request.method !== 'GET') return;
+
+  if (url.origin.includes('story-api.dicoding.dev')) {
+    event.respondWith(handleApiRequest(event.request));
+  } else {
+    event.respondWith(handleResourceRequest(event.request));
   }
-
-  // App Shell Strategy
-  fetchEvent.respondWith(
-    caches.match(reqObject).then((cachedShell) => {
-      const networkFetchPromise = fetch(reqObject)
-        .then((freshShell) => {
-          if (freshShell.status === 200 && reqObject.method === 'GET') {
-            const shellClone = freshShell.clone();
-            caches.open(CORE_CACHE_TAG).then((coreCache) => coreCache.put(reqObject, shellClone));
-          }
-          return freshShell;
-        })
-        .catch(() => cachedShell);
-
-      return cachedShell || networkFetchPromise;
-    })
-  );
 });
 
-/* PUSH NOTIFICATIONS */
-self.addEventListener('push', (pushEvent) => {
-  let alertPayload = {
-    title: 'ChronoGrid Nexus',
-    body: 'New chronicle broadcasted!',
-    id: '',
-  };
+self.addEventListener('push', event => {
+  let pushData = { title: 'Notification', body: 'You have a new update.' };
 
-  if (pushEvent.data) {
+  if (event.data) {
     try {
-      alertPayload = pushEvent.data.json();
-    } catch (parseErr) {
-      alertPayload.body = pushEvent.data.text();
+      pushData = event.data.json();
+    } catch (e) {
+      pushData.body = event.data.text();
     }
   }
 
-  const notificationTitle = alertPayload.title || 'ChronoGrid Nexus';
-  const notificationOptions = {
-    body: alertPayload.body || 'A fresh entry has been published to the grid.',
+  const options = {
+    body: pushData.body || 'New content is available!',
     icon: './icons/icon-192x192.png',
     badge: './favicon.png',
     data: {
-      url: alertPayload.id ? `/#/detail/${alertPayload.id}` : '/#/',
+      url: pushData.id ? `/#/detail/${pushData.id}` : '/#/'
     },
-    actions: [
-      {
-        action: 'inspect-chronicle',
-        title: 'View Chronicle',
-      },
-    ],
+    actions: [{ action: 'view', title: 'Open App' }]
   };
 
-  pushEvent.waitUntil(self.registration.showNotification(notificationTitle, notificationOptions));
+  event.waitUntil(self.registration.showNotification(pushData.title || 'ChronoGrid System Alert', options));
 });
 
-self.addEventListener('notificationclick', (clickEvent) => {
-  clickEvent.notification.close();
-  const destinationHref = clickEvent.notification.data && clickEvent.notification.data.url ? clickEvent.notification.data.url : '/#/';
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const urlToOpen = event.notification.data?.url || '/#/';
 
-  clickEvent.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientCollection) => {
-      for (const clientNode of clientCollection) {
-        if (clientNode.url && 'focus' in clientNode) {
-          clientNode.navigate(destinationHref);
-          return clientNode.focus();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      for (const client of windowClients) {
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(destinationHref);
+        return clients.openWindow(urlToOpen);
       }
     })
   );
 });
 
-/* BACKGROUND SYNC */
-self.addEventListener('sync', (syncEvent) => {
-  if (syncEvent.tag === 'sync-new-stories') {
-    syncEvent.waitUntil(
-      clients.matchAll({ type: 'window' }).then((clientArray) => {
-        clientArray.forEach((clientWindow) => {
-          clientWindow.postMessage({ type: 'SYNC_OFFLINE_STORIES' });
+self.addEventListener('sync', event => {
+  if (event.tag === 'sync-new-stories') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window' }).then(windowClients => {
+        windowClients.forEach(client => {
+          client.postMessage({ type: 'SYNC_OFFLINE_STORIES' });
         });
       })
     );
